@@ -1,0 +1,134 @@
+//@version=5
+indicator(title="Golden strategy", shorttitle="Golden strategy", overlay=true)
+len = 3//input.int(9, minval=1, title="Length")
+src = close//input(close, title="Source")
+//offset = 2//input.int(title="Offset", defval=0, minval=-500, maxval=500, display = display.data_window)
+out = ta.ema(src, len)
+plot(out, title="", color=color.rgb(255, 230, 5), offset=2,linewidth = 2)
+//plot(out[2], title="", color=color.rgb(5, 93, 255), offset=0,linewidth = 2)
+
+out1 = out[2]
+
+
+g =  (high > high[1] and high[1] < out1) //or (ta.crossover(close,out1))
+r =  low < low[1] and low[1] > out1
+
+
+rg = 0
+rg := r ? 1 : g ? 2 : nz(rg[1])
+
+buy11 = 0
+buy11 := r ? 0 : g ? 1 : nz(buy11[1])
+sell11 = 0
+sell11 := r ? 1 : g ? 0 : nz(sell11[1])
+
+
+buy = buy11 and not buy11[1]
+sell = sell11 and not sell11[1]
+reward = input(5)
+x = reward*(ta.valuewhen(buy,high[1],0) - ta.valuewhen(buy,low[1],0)) + ta.valuewhen(buy,high[1],0)
+y = ta.valuewhen(buy,high[1],0)
+
+x1 = plot(buy ? x:na,display = display.none)
+y1 = plot(buy ? y:na,display = display.none)
+//fill(x1,y1,color = color.lime)
+
+a = ta.valuewhen(sell,low[1],0) - (reward*(ta.valuewhen(sell,high[1],0) - ta.valuewhen(sell,low[1],0)))
+b = ta.valuewhen(sell,low[1],0)
+
+a1 = plot(sell ? a:na,display = display.none)
+b1 = plot(sell ? b:na,display = display.none)
+// fill(a1,b1,color = color.red)
+
+// plotshape(buy  , color = color.green , location = location.belowbar , textcolor = color.white , style = shape.triangleup , size = size.small)
+// plotshape(sell   , color = color.red  , location = location.abovebar , textcolor = color.white , style = shape.triangledown , size = size.small)
+//Settings
+//-----------------------------------------------------------------------------{
+length = input.int(14, 'Swing Detection Lookback')
+mult = input.float(1., 'Slope', minval = 0, step = .1)
+calcMethod = input.string('Atr', 'Slope Calculation Method', options = ['Atr','Stdev','Linreg'])
+backpaint = input(true, tooltip = 'Backpainting offset displayed elements in the past. Disable backpainting to see real time information returned by the indicator.')
+
+//Style
+upCss = input.color(color.teal, 'Up Trendline Color', group = 'Style')
+dnCss = input.color(color.red, 'Down Trendline Color', group = 'Style')
+showExt = input(true, 'Show Extended Lines')
+
+//-----------------------------------------------------------------------------}
+//Calculations
+//-----------------------------------------------------------------------------{
+var upper = 0.
+var lower = 0.
+var slope_ph = 0.
+var slope_pl = 0.
+
+var offset = backpaint ? length : 0
+
+n = bar_index
+//src = close
+
+ph = ta.pivothigh(length, length)
+pl = ta.pivotlow(length, length)
+
+//Slope Calculation Method
+slope = switch calcMethod
+    'Atr'    => ta.atr(length) / length * mult
+    'Stdev'  => ta.stdev(src,length) / length * mult
+    'Linreg' => math.abs(ta.sma(src * n, length) - ta.sma(src, length) * ta.sma(n, length)) / ta.variance(n, length) / 2 * mult
+
+//Get slopes and calculate trendlines
+slope_ph := ph ? slope : slope_ph
+slope_pl := pl ? slope : slope_pl
+
+upper := ph ? ph : upper - slope_ph
+lower := pl ? pl : lower + slope_pl
+
+var upos = 0
+var dnos = 0
+upos := ph ? 0 : close > upper - slope_ph * length ? 1 : upos
+dnos := pl ? 0 : close < lower + slope_pl * length ? 1 : dnos
+
+//-----------------------------------------------------------------------------}
+//Extended Lines
+//-----------------------------------------------------------------------------{
+var uptl  = line.new(na,na,na,na, color = upCss, style = line.style_dashed, extend = extend.right)
+var dntl  = line.new(na,na,na,na, color = dnCss, style = line.style_dashed, extend = extend.right)
+
+if ph and showExt
+    uptl.set_xy1(n-offset, backpaint ? ph : upper - slope_ph * length)
+    uptl.set_xy2(n-offset+1, backpaint ? ph - slope : upper - slope_ph * (length+1))
+
+if pl and showExt
+    dntl.set_xy1(n-offset, backpaint ? pl : lower + slope_pl * length)
+    dntl.set_xy2(n-offset+1, backpaint ? pl + slope : lower + slope_pl * (length+1))
+
+//-----------------------------------------------------------------------------}
+//Plots
+//-----------------------------------------------------------------------------{
+plot(backpaint ? upper : upper - slope_ph * length, 'Upper', color = ph ? na : upCss, offset = -offset)
+plot(backpaint ? lower : lower + slope_pl * length, 'Lower', color = pl ? na : dnCss, offset = -offset)
+
+//Breakouts
+plotshape(upos > upos[1] ? low : na, "Upper Break"
+  , shape.labelup
+  , location.absolute
+  , upCss
+  , text = "B"
+  , textcolor = color.white
+  , size = size.tiny)
+
+plotshape(dnos > dnos[1] ? high : na, "Lower Break"
+  , shape.labeldown
+  , location.absolute
+  , dnCss
+  , text = "B"
+  , textcolor = color.white
+  , size = size.tiny)
+
+//-----------------------------------------------------------------------------}
+//Alerts
+//-----------------------------------------------------------------------------{
+alertcondition(upos > upos[1], 'Upward Breakout', 'Price broke the down-trendline upward')
+alertcondition(dnos > dnos[1], 'Downward Breakout', 'Price broke the up-trendline downward')
+
+//-----------------------------------------------------------------------------}
